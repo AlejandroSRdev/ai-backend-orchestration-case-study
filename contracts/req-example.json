@@ -1,0 +1,13 @@
+{
+  "language": "en",
+  "assistantContext": "My name is Alex. I work as a software developer focused on backend systems and distributed services. I enjoy building reliable systems, reading about software architecture, and maintaining a disciplined but sustainable routine. Lately I feel mentally scattered due to context switching and want to regain consistency and focus in my daily work.",
+  "testData": {
+    "What habit, routine or area of your life would you like to improve or strengthen right now?": "I want to improve my ability to focus deeply on complex tasks without constant distractions.",
+    "Why is it important for you to work on this habit? What do you hope to achieve in the long term?": "Sustained focus is critical for my professional growth as a software developer. In the long term, I want to produce higher-quality work and feel more in control of my time.",
+    "Have you already tried to build or maintain this habit before? What helped you or what failed?": "I tried time blocking and pomodoro techniques. They helped initially, but I often abandoned them when deadlines or unexpected tasks appeared.",
+    "How would you like to approach the process of integrating this habit into your daily life?": "I prefer a structured but realistic approach that adapts to my workload instead of a rigid plan that breaks under pressure.",
+    "Which approach suits you best: progressive and smooth, or demanding and disciplined from the start?": "Progressive and smooth. I value consistency over intensity.",
+    "Do you have any environment, person or place that helps you stay consistent?": "Working early in the morning in a quiet environment helps me stay focused, especially before meetings and messages start.",
+    "What thought or emotion usually makes you give up when trying to maintain a habit?": "Frustration when I feel I am not being productive enough, which leads me to abandon the routine altogether."
+  }
+}

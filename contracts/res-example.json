@@ -1,0 +1,31 @@
+{
+    "id": "1769702926214",
+    "title": "deep focus architect",
+    "description": "this series, \"deep focus architect,\" is crafted for software developers like alex, aiming to rebuild deep concentration amidst daily context switching. it leverages your preference for early morning quiet, establishing consistent structures that flex with your workload. by progressively integrating",
+    "actions": [
+        {
+            "name": "Morning Routine",
+            "description": "Establish a consistent morning routine to enhance focus and productivity.",
+            "difficulty": "low"
+        },
+        {
+            "name": "Time Blocking",
+            "description": "Implement time blocking techniques to allocate specific periods for deep work.",
+            "difficulty": "medium"
+        },
+        {
+            "name": "Mindfulness Meditation",
+            "description": "Practice mindfulness meditation to improve concentration and reduce distractions.",
+            "difficulty": "medium"
+        },
+        {
+            "name": "Task Prioritization",
+            "description": "Prioritize tasks using the Eisenhower Matrix to focus on what truly matters.",
+            "difficulty": "low"
+        }
+    ],
+    "rank": "bronze",
+    "totalScore": 0,
+    "createdAt": "2026-01-29T16:08:46.359Z",
+    "lastActivityAt": "2026-01-29T16:08:46.359Z"
+}
