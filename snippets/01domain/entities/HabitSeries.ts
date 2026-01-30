@@ -10,11 +10,6 @@
  * - Encapsulates domain invariants and behavior
  * - Is completely independent from transport, persistence or AI concerns
  *
- * IMPORTANT:
- * - This is NOT a DTO.
- * - This is NOT an AI artifact.
- * - This is NOT a persistence model.
- *
  * External communication is handled via explicit DTO mapping (toDTO()).
  * AI-generated content is accepted only through controlled factory methods.
  */

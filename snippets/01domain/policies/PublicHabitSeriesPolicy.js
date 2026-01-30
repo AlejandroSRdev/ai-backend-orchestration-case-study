@@ -16,12 +16,8 @@
  * - Sensitive business rules (plans, pricing, energy, monetization) are
  *   deliberately excluded.
  * - The goal is architectural clarity, not feature completeness.
- *
- * ARCHITECTURE
- * ------------
- * - Hexagonal Architecture (Ports & Adapters)
- * - Domain-only rules
- * - Pure functions, no side effects
+ * - Domain-only rules.
+ * - Pure functions, no side effects.
  */
 
 /* ============================================================================

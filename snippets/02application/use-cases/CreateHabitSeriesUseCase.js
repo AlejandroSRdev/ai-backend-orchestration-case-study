@@ -1,44 +1,48 @@
 /**
- * Create Habit Series — Application Use Case
+ * Create Habit Series Use Case (Application Layer)
  *
- * Layer: Application
- * Architecture: Hexagonal (Ports & Adapters)
+ * Orchestrates the full flow of habit series creation via AI.
  *
- * This use case coordinates the complete process of creating a habit series
- * using AI as a semantic generation tool under explicit business constraints.
+ * IMPORTANT NOTE ON VALIDATION STRATEGY:
+ * ------------------------------------------------------------
+ * In this version, AI output is treated as UNTRUSTED INPUT.
  *
- * It acts as the orchestration layer between:
- * - domain policies (plan access, limits, energy)
- * - AI execution (multi-pass generation)
- * - schema validation
- * - persistence and side effects
+ * A schema-like structure is used to GUIDE the AI during generation
+ * (prompt-level constraint), but runtime validation is performed
+ * MANUALLY through explicit defensive checks, not via a JSON Schema
+ * validator (e.g. Ajv).
  *
- * High-level flow:
- * 1. Pre-AI checks (plan, feature access, limits, available energy)
- * 2. AI execution pipeline (creative → structured → schema-enforced)
- * 3. Post-AI validation (schema compliance)
- * 4. Persistence of the resulting series
- * 5. Domain side effects (counters)
- * 6. Return of a domain DTO projection
+ * This is a deliberate trade-off:
+ * - avoids premature rigidity while prompts and structure evolve
+ * - keeps validation logic explicit and readable at the use-case level
  *
- * All dependencies are injected via ports to preserve testability
- * and decouple the use case from infrastructure concerns.
+ * Flow:
+ * 1. Pre-AI domain validation (abstracted in this case study)
+ * 2. AI execution (3 passes: creative → structure → schema-guided)
+ * 3. Post-AI defensive validation (manual contract checks)
+ * 4. Persistence
+ * 5. Domain side effects
+ * 6. Return success result
+ *
+ * Dependencies (injected):
+ * - userRepository: IUserRepository
+ * - habitSeriesRepository: IHabitSeriesRepository
+ * - energyRepository: IEnergyRepository
+ * - aiProvider: IAIProvider
  */
 
-import { hasFeatureAccess, getPlan } from '../../../domain/policies/PlanPolicy.js';
 import { getModelConfig } from '../../../domain/policies/ModelSelectionPolicy.js';
 import { generateAIResponse } from '../../services/AIExecutionService.js';
-import { ValidationError, AuthorizationError } from '../errors/index.js';
-import { InsufficientEnergyError } from '../../../domain/errors/index.js';
+import { ValidationError } from '../errors/index.js';
 
 import CreativeHabitSeriesPrompt from '../../prompts/habit_series_prompts/CreativeHabitSeriesPrompt.js';
 import StructureHabitSeriesPrompt from '../../prompts/habit_series_prompts/StructureHabitSeriesPrompt.js';
 import JsonSchemaHabitSeriesPrompt from '../../prompts/habit_series_prompts/JsonSchemaHabitSeriesPrompt.js';
-import { HabitSeries } from '../../../domain/entities/HabitSeries.ts';
+import { HabitSeries } from '../../../domain/entities/HabitSeries.js';
 
 /**
- * Expected schema for habit series (AI output structure)
- * Note: AI prompts use Spanish keys; this schema validates AI output.
+ * Schema-like structure used ONLY to guide AI generation.
+ * This is NOT a runtime-enforced JSON Schema.
  */
 const HABIT_SERIES_SCHEMA = {
   type: 'object',
@@ -64,30 +68,20 @@ const HABIT_SERIES_SCHEMA = {
 };
 
 /**
- * Determine effective plan considering trial status
+ * Manual defensive validation of AI output.
+ * This acts as the runtime contract for the use case.
  */
-function determineEffectivePlan(user) {
-  let effectivePlan = user.plan || 'freemium';
-  if (effectivePlan === 'freemium' && user.trial?.activo) {
-    effectivePlan = 'trial';
-  }
-  return effectivePlan;
-}
-
-/**
- * Validate that parsed data matches expected schema
- */
-function validateSchema(data) {
+function validateAIOutput(data) {
   if (!data || typeof data !== 'object') {
-    return { valid: false, error: 'Data is not an object' };
+    return { valid: false, error: 'Output is not an object' };
   }
 
   if (typeof data.title !== 'string' || !data.title.trim()) {
-    return { valid: false, error: 'Missing or invalid title' };
+    return { valid: false, error: 'Invalid or missing title' };
   }
 
   if (typeof data.description !== 'string' || !data.description.trim()) {
-    return { valid: false, error: 'Missing or invalid description' };
+    return { valid: false, error: 'Invalid or missing description' };
   }
 
   if (!Array.isArray(data.actions)) {
@@ -95,7 +89,7 @@ function validateSchema(data) {
   }
 
   if (data.actions.length < 3 || data.actions.length > 5) {
-    return { valid: false, error: 'actions must have between 3 and 5 items' };
+    return { valid: false, error: 'actions length out of bounds' };
   }
 
   for (let i = 0; i < data.actions.length; i++) {
@@ -104,101 +98,48 @@ function validateSchema(data) {
       return { valid: false, error: `actions[${i}] is not an object` };
     }
     if (typeof action.name !== 'string' || !action.name.trim()) {
-      return { valid: false, error: `actions[${i}].name is missing or invalid` };
+      return { valid: false, error: `actions[${i}].name invalid` };
     }
     if (typeof action.description !== 'string' || !action.description.trim()) {
-      return { valid: false, error: `actions[${i}].description is missing or invalid` };
+      return { valid: false, error: `actions[${i}].description invalid` };
     }
     if (typeof action.difficulty !== 'string' || !action.difficulty.trim()) {
-      return { valid: false, error: `actions[${i}].difficulty is missing or invalid` };
+      return { valid: false, error: `actions[${i}].difficulty invalid` };
     }
   }
 
   return { valid: true };
 }
 
-/**
- * Create a habit series via AI
- *
- * @param {string} userId - User ID
- * @param {Object} payload - Request payload
- * @param {string} payload.language - Language code ('en' | 'es')
- * @param {string} payload.assistantContext - Serialized assistant context
- * @param {Record<string, string>} payload.testData - User test responses
- * @param {Object} payload.difficultyLabels - Difficulty label translations
- * @param {Object} deps - Injected dependencies
- * @returns {Promise<HabitSeriesDTO>} The complete habit series as persisted
- */
 export async function createHabitSeries(userId, payload, deps) {
-  console.log(`[USE-CASE] [Habit Series] CreateHabitSeries started for user ${userId}`);
+  console.log(`[USE-CASE] CreateHabitSeries started for user ${userId}`);
 
   const { userRepository, habitSeriesRepository, energyRepository, aiProvider } = deps;
 
-  // Validate dependencies
-  if (!userRepository) {
-    throw new ValidationError('Dependency required: userRepository');
-  }
-  if (!habitSeriesRepository) {
-    throw new ValidationError('Dependency required: habitSeriesRepository');
-  }
-  if (!energyRepository) {
-    throw new ValidationError('Dependency required: energyRepository');
-  }
-  if (!aiProvider) {
-    throw new ValidationError('Dependency required: aiProvider');
+  if (!userRepository || !habitSeriesRepository || !energyRepository || !aiProvider) {
+    throw new ValidationError('Missing required dependencies');
   }
 
-  // Validate payload
   if (!payload?.language || !payload?.testData) {
-    throw new ValidationError('Missing required payload fields: language, testData');
+    throw new ValidationError('Missing required payload fields');
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // STEP 1: PRE-AI VALIDATION
+  // STEP 1: DOMAIN VALIDATION (ABSTRACTED)
   // ═══════════════════════════════════════════════════════════════════════
+  // At this point, the domain decides WHETHER the operation is allowed
+  // (plan, limits, energy, feature access, etc.).
+  // Concrete business rules are intentionally omitted in this case study.
 
-  // 1.1 Load user
-  const user = await userRepository.getUser(userId);
-  if (!user) {
-    throw new ValidationError('USER_NOT_FOUND');
-  }
-
-  // 1.2 Determine effective plan
-  const effectivePlan = determineEffectivePlan(user);
-  const planConfig = getPlan(effectivePlan, user.trial?.activo);
-
-  // 1.3 Validate feature access
-  const hasAccess = hasFeatureAccess(effectivePlan, 'habits.series.create');
-  if (!hasAccess) {
-    throw new AuthorizationError(
-      `Plan ${effectivePlan} does not have access to habits.series.create`
-    );
-  }
-
-  // 1.4 Validate active series limit
-  const limits = user.limits || {};
-  const activeSeriesCount = limits.activeSeriesCount || 0;
-  const maxActiveSeries = planConfig.maxActiveSeries || 0;
-
-  if (activeSeriesCount >= maxActiveSeries) {
-    throw new AuthorizationError(
-      `Active series limit reached: ${activeSeriesCount}/${maxActiveSeries}`
-    );
-  }
-
-  // 1.5 Validate energy availability
-  const energyData = await energyRepository.getEnergy(userId);
-  if (!energyData || energyData.actual <= 0) {
-    throw new InsufficientEnergyError(1, energyData?.actual || 0);
-  }
+  console.log('[DOMAIN] Validation passed (abstracted)');
 
   // ═══════════════════════════════════════════════════════════════════════
-  // STEP 2: AI EXECUTION (3 passes)
+  // STEP 2: AI EXECUTION (3 PASSES)
   // ═══════════════════════════════════════════════════════════════════════
 
   const { language, assistantContext, testData } = payload;
 
-  // Pass 1: Creative generation (human-readable text)
+  // Pass 1 — Creative
   const creativeMessages = CreativeHabitSeriesPrompt({
     language,
     assistantContext: assistantContext || '',
@@ -209,41 +150,27 @@ export async function createHabitSeries(userId, payload, deps) {
   const creativeResponse = await generateAIResponse(
     userId,
     creativeMessages,
-    {
-      model: creativeConfig.model,
-      temperature: creativeConfig.temperature,
-      maxTokens: creativeConfig.maxTokens,
-      forceJson: false
-    },
+    creativeConfig,
     { aiProvider, energyRepository }
   );
 
-  const rawCreativeText = creativeResponse.content;
-
-  // Pass 2: Structure extraction (text → JSON)
+  // Pass 2 — Structure
   const structureMessages = StructureHabitSeriesPrompt({
     language,
-    rawText: rawCreativeText
+    rawText: creativeResponse.content
   });
 
   const structureConfig = getModelConfig('habit_series_structure');
   const structureResponse = await generateAIResponse(
     userId,
     structureMessages,
-    {
-      model: structureConfig.model,
-      temperature: structureConfig.temperature,
-      maxTokens: structureConfig.maxTokens,
-      forceJson: true
-    },
+    structureConfig,
     { aiProvider, energyRepository }
   );
 
-  const rawStructuredText = structureResponse.content;
-
-  // Pass 3: Schema enforcement (strict JSON validation)
+  // Pass 3 — Schema-guided normalization
   const schemaMessages = JsonSchemaHabitSeriesPrompt({
-    content: rawStructuredText,
+    content: structureResponse.content,
     schema: HABIT_SERIES_SCHEMA
   });
 
@@ -251,61 +178,48 @@ export async function createHabitSeries(userId, payload, deps) {
   const schemaResponse = await generateAIResponse(
     userId,
     schemaMessages,
-    {
-      model: schemaConfig.model,
-      temperature: schemaConfig.temperature,
-      maxTokens: schemaConfig.maxTokens,
-      forceJson: true
-    },
+    schemaConfig,
     { aiProvider, energyRepository }
   );
 
   // ═══════════════════════════════════════════════════════════════════════
-  // STEP 3: POST-AI VALIDATION
+  // STEP 3: POST-AI DEFENSIVE VALIDATION
   // ═══════════════════════════════════════════════════════════════════════
 
-  let parsedSeries;
+  let parsed;
   try {
-    parsedSeries = typeof schemaResponse.content === 'string'
+    parsed = typeof schemaResponse.content === 'string'
       ? JSON.parse(schemaResponse.content)
       : schemaResponse.content;
-  } catch (parseError) {
-    throw new ValidationError(`AI output is not valid JSON: ${parseError.message}`);
+  } catch (err) {
+    throw new ValidationError('AI output is not valid JSON');
   }
 
-  const actionCount = Array.isArray(parsedSeries?.acciones) ? parsedSeries.acciones.length : 0;
-  console.log(`[SCHEMA] [Habit Series] Validating AI output against schema, actions=${actionCount}`);
-
-  const schemaValidation = validateSchema(parsedSeries);
-  if (!schemaValidation.valid) {
-    console.error(`[SCHEMA ERROR] [Habit Series] Schema validation failed: ${schemaValidation.error}`);
-    throw new ValidationError(`AI output schema validation failed: ${schemaValidation.error}`);
+  const validation = validateAIOutput(parsed);
+  if (!validation.valid) {
+    throw new ValidationError(`AI output validation failed: ${validation.error}`);
   }
 
-  console.log('[SCHEMA] [Habit Series] Schema validation OK');
+  console.log('[CONTRACT] AI output validated');
 
   // ═══════════════════════════════════════════════════════════════════════
   // STEP 4: PERSISTENCE
   // ═══════════════════════════════════════════════════════════════════════
 
-  const persistResult = await habitSeriesRepository.createFromAI(userId, parsedSeries);
-  const seriesId = persistResult.id;
+  const entity = HabitSeries.fromAIOutput(parsed);
+  const persisted = await habitSeriesRepository.createFromAI(userId, entity);
 
   // ═══════════════════════════════════════════════════════════════════════
-  // STEP 5: SIDE EFFECTS (counter increment)
+  // STEP 5: DOMAIN SIDE EFFECTS
   // ═══════════════════════════════════════════════════════════════════════
 
   await userRepository.incrementActiveSeries(userId);
 
   // ═══════════════════════════════════════════════════════════════════════
-  // STEP 6: RETURN FULL HABIT SERIES DTO
+  // STEP 6: RETURN RESULT
   // ═══════════════════════════════════════════════════════════════════════
-  // Create domain entity and return its DTO projection.
-  // The entity handles mapping AI output to domain model.
 
-  const habitSeries = HabitSeries.fromAIOutput(seriesId, parsedSeries);
-
-  return habitSeries.toDTO();
+  return persisted.toDTO();
 }
 
 export default { createHabitSeries };

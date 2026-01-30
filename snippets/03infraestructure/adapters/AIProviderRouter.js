@@ -1,8 +1,6 @@
 /**
  * AI Provider Router — Infrastructure Layer
  *
- * Architecture: Hexagonal (Ports & Adapters)
- *
  * This component acts as a routing adapter between the application layer
  * and multiple AI providers.
  *

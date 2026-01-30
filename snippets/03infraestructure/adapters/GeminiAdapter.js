@@ -1,37 +1,39 @@
 /**
- * Gemini Adapter — Infrastructure Layer
+ * Gemini Adapter (Infrastructure Layer)
  *
- * Architecture: Hexagonal (Ports & Adapters)
+ * This adapter integrates Google Gemini as an external AI dependency,
+ * used exclusively for creative and semi-creative generation.
  *
- * This adapter is a concrete implementation of the IAIProvider port
- * for Google Gemini models.
+ * It implements the IAIProvider port and acts as a pure translator between
+ * the application layer and the Gemini API:
+ * - Translates system messages into Gemini-compatible prompts
+ * - Executes the AI call using the Google Generative AI SDK
+ * - Translates the response back into a backend-friendly format
+ * - Computes token usage and energy consumption deterministically
  *
- * Its responsibility is strictly infrastructural:
- * - Translate domain-level AI requests into Gemini SDK calls
- * - Normalize Gemini responses into a provider-agnostic format
- * - Perform token and energy accounting according to predefined rules
+ * IMPORTANT:
+ * - Gemini is treated as a probabilistic generator.
+ * - It does NOT enforce schemas or domain constraints.
+ * - It does NOT make business decisions.
  *
- * This adapter deliberately does NOT:
- * - Define prompts or AI flows
- * - Decide which model to use
- * - Apply domain rules or business logic
- *
- * Those responsibilities remain in the application layer
- * (use-cases, policies, and prompt factories).
+ * Strict JSON and schema enforcement are intentionally handled
+ * by a separate OpenAI adapter, dedicated to structure-only transformations.
+ * This keeps creative generation and structural validation clearly separated.
  */
 
 import { getModel } from './GeminiConfig.js';
 import { IAIProvider } from '../../../domain/ports/IAIProvider.js';
-import { sanitizeUserInput } from '../../../application/input/SanitizeUserInput.js';
 
 /**
- * Estimate token usage for Gemini models.
+ * Estimate token usage for Gemini responses.
  *
- * This is an approximation based on the original production formula:
+ * This is a deterministic approximation based on the original implementation.
+ *
+ * Formula:
  *   tokens ≈ text.length / 3.7
  *
- * Token estimation is intentionally isolated to keep provider-specific
- * heuristics out of the domain layer.
+ * @param {string} text
+ * @returns {number}
  */
 function calculateGeminiTokens(text) {
   if (!text || typeof text !== 'string') return 0;
@@ -39,13 +41,19 @@ function calculateGeminiTokens(text) {
 }
 
 /**
- * Compute energy consumption for a Gemini request.
+ * Compute energy consumption for a Gemini call.
  *
- * Energy is calculated using the legacy production formula:
- *   energy = ceil((responseTokens + promptTokens × 0.30) / 100)
+ * Energy is derived from both prompt and response size,
+ * following the original backend formula:
  *
- * This preserves historical behavior while keeping the logic
- * localized to the provider adapter.
+ * 1. promptTokens = calculateGeminiTokens(prompt)
+ * 2. responseTokens = calculateGeminiTokens(response)
+ * 3. total = responseTokens + (promptTokens × 0.30)
+ * 4. energy = ceil(total / 100)
+ *
+ * @param {string} prompt
+ * @param {string} response
+ * @returns {number}
  */
 function calculateGeminiEnergy(prompt, response) {
   const tokensPrompt = calculateGeminiTokens(prompt);
@@ -54,29 +62,32 @@ function calculateGeminiEnergy(prompt, response) {
   const energy = Math.ceil(totalTokens / 100);
 
   console.log(
-    `📊 [Gemini Energy] Prompt: ${tokensPrompt}t, ` +
-    `Response: ${tokensResponse}t, ` +
-    `Total: ${totalTokens}t → Energy: ${energy}`
+    `📊 [Gemini Energy] Prompt: ${tokensPrompt}t, Response: ${tokensResponse}t, Total: ${totalTokens}t → Energy: ${energy}`
   );
 
   return energy;
 }
 
 /**
- * Gemini adapter implementing the IAIProvider contract.
+ * Gemini adapter implementing the IAIProvider port.
  *
- * Acts as the system boundary for all Gemini-specific behavior.
+ * This adapter performs no orchestration, validation, or flow control.
+ * All decisions about when and why Gemini is called belong to the use case.
  */
 export class GeminiAdapter extends IAIProvider {
 
   /**
-   * Execute a single AI call against a Gemini model.
+   * Universal Gemini call.
    *
-   * This method assumes:
-   * - Prompts have already been constructed upstream
-   * - Model selection has already been decided by policies
+   * @param {string} userId - User identifier (used only for logging)
+   * @param {Array<Object>} messages - [{ role, content }] prepared by the application layer
+   * @param {Object} options
+   * @param {string} options.model - Gemini model (default: gemini-2.5-flash)
+   * @param {number} options.temperature - Sampling temperature
+   * @param {number} options.maxTokens - Output token limit
+   * @param {boolean} options.forceJson - Included for interface parity (not used here)
    *
-   * It focuses exclusively on execution and normalization.
+   * @returns {Promise<Object>} { content, model, tokensUsed, energyConsumed }
    */
   async callAI(userId, messages, options = {}) {
     try {
@@ -84,29 +95,15 @@ export class GeminiAdapter extends IAIProvider {
         model = 'gemini-2.5-flash',
         temperature = 0.7,
         maxTokens = 1500,
-        forceJson = false,
+        forceJson = false, // intentionally unused
       } = options;
 
       console.log(`🧠 [Gemini] Calling model: ${model}`);
 
       const geminiModel = getModel(model);
 
-      /**
-       * Sanitize raw user input at the infrastructure boundary.
-       * Only user-originated messages are sanitized; system and
-       * assistant messages are considered trusted.
-       */
-      const sanitizedMessages = messages.map(m => {
-        if (m.role === 'user') {
-          return { ...m, content: sanitizeUserInput(m.content) };
-        }
-        return m;
-      });
-
-      /**
-       * Convert generic message format into Gemini-compatible prompt text.
-       */
-      const prompt = sanitizedMessages.map(m => {
+      // Convert messages to a single Gemini-compatible prompt
+      const prompt = messages.map(m => {
         if (m.role === 'system') return `[SYSTEM INSTRUCTIONS]\n${m.content}`;
         if (m.role === 'assistant') return `[ASSISTANT]\n${m.content}`;
         return m.content;
@@ -125,10 +122,7 @@ export class GeminiAdapter extends IAIProvider {
       const content = result.response.text();
       const tokensUsed = calculateGeminiTokens(content);
 
-      /**
-       * Only Gemini calls consume internal "energy" units,
-       * as they represent creative generation.
-       */
+      // Only Gemini consumes internal energy units (creative generation)
       const energyConsumed = calculateGeminiEnergy(prompt, content);
 
       const response = {
@@ -145,16 +139,21 @@ export class GeminiAdapter extends IAIProvider {
       return response;
 
     } catch (error) {
-      console.error(`❌ [GeminiAdapter] callAI failed: ${error.message}`);
-      throw new Error(`Gemini provider error: ${error.message}`);
+      console.error(`❌ [GeminiAdapter] callAI error: ${error.message}`);
+      throw new Error(`Gemini call failed: ${error.message}`);
     }
   }
 
   /**
-   * Execute an AI call based on a higher-level function type.
+   * Convenience wrapper when a function type is provided.
    *
-   * Model resolution is intentionally delegated to the application layer.
-   * This method exists for compatibility with function-based flows.
+   * Model selection is intentionally handled by the use case
+   * (via ModelSelectionPolicy), not by this adapter.
+   *
+   * @param {string} userId
+   * @param {Array<Object>} messages
+   * @param {string} functionType
+   * @returns {Promise<Object>}
    */
   async callAIWithFunctionType(userId, messages, functionType) {
     return this.callAI(userId, messages, {

@@ -39,9 +39,9 @@ function CreativeHabitSeriesPrompt({
   assistantContext,
   testData
 }) {
-  const dificultadBaja = Difficulty.LOW;
-  const dificultadMedia = Difficulty.MEDIUM;
-  const dificultadAlta = Difficulty.HIGH;
+  const lowDifficulty = Difficulty.LOW;
+  const mediumDifficulty = Difficulty.MEDIUM;
+  const highDifficulty = Difficulty.HIGH;
 
   /**
    * Optional contextual background.
@@ -75,7 +75,7 @@ FORMAT RULES (VERY STRICT):
 - Each action must have:
   • A short action name
   • One description of max **5 lines**
-  • A difficulty: "${dificultadBaja}" (easy/quick), "${dificultadMedia}" (moderate effort), or "${dificultadAlta}" (challenging/demanding)
+  • A difficulty: "${lowDifficulty}" (easy/quick), "${mediumDifficulty}" (moderate effort), or "${highDifficulty}" (challenging/demanding)
 - NO lists outside the action list.
 - NO intros ("Here is your series"), NO conclusions.
 - ONLY the content of the series.
@@ -101,7 +101,7 @@ REGLAS DE FORMATO (MUY ESTRICTAS):
 - Cada acción debe incluir:
   • Un nombre corto
   • Una descripción de máximo **5 líneas**
-  • Una dificultad: "${dificultadBaja}" (fácil/rápida), "${dificultadMedia}" (esfuerzo moderado), o "${dificultadAlta}" (exigente/desafiante)
+  • Una dificultad: "${lowDifficulty}" (fácil/rápida), "${mediumDifficulty}" (esfuerzo moderado), o "${highDifficulty}" (exigente/desafiante)
 - SIN intros del tipo ("Aquí tienes la serie"), SIN cierres formales.
 - SIN listas externas que no sean las acciones.
 - SOLO el contenido de la serie.
