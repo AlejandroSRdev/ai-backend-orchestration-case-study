@@ -1,127 +1,152 @@
-/**
- * HabitSeries Entity — Domain Layer
- *
- * This is the core domain entity of the "Create Habit Series" endpoint.
- * It represents a thematic collection of habit actions governed by
- * explicit business rules.
- *
- * This entity:
- * - Aggregates multiple Value Objects (Action, Rank, etc.)
- * - Encapsulates domain invariants and behavior
- * - Is completely independent from transport, persistence or AI concerns
- *
- * External communication is handled via explicit DTO mapping (toDTO()).
- * AI-generated content is accepted only through controlled factory methods.
- */
-
-import { Action } from '../value_objects/habit_objects/Action.ts';
-import type { ActionDTO, AIActionInput } from '../value_objects/habit_objects/Action.ts';
-import { Rank, calculateRankFromScore } from '../value_objects/habit_objects/Rank.ts';
+import { Action, Rank, calculateRankFromScore } from "../value_objects/habit_objects";
 
 /**
- * Data Transfer Object used for API responses.
- * This shape is intentionally decoupled from the domain entity.
- */
-export interface HabitSeriesDTO {
-  readonly id: string;
-  readonly title: string;
-  readonly description: string;
-  readonly actions: readonly ActionDTO[];
-  readonly rank: Rank;
-  readonly totalScore: number;
-  readonly createdAt: string;
-  readonly lastActivityAt: string;
-}
-
-/**
- * Minimal input structure expected from AI output.
+ * HabitSeries (Domain Entity)
  *
- * NOTE:
- * This interface does not represent trust.
- * Validation and normalization occur before and after entity creation.
+ * Represents a thematic collection of habit-related actions.
+ *
+ * A HabitSeries:
+ * - Has an identity, title and description.
+ * - Contains a growing list of Actions (minimum 3).
+ * - Accumulates a totalScore over time.
+ * - Derives its Rank exclusively from totalScore (rank is NOT stored).
+ *
+ * This entity is:
+ * - Pure domain logic.
+ * - Defensive by construction.
+ * - Free of infrastructure, DTOs, persistence or AI concerns.
+ *
+ * If an instance of HabitSeries exists, it is guaranteed to be valid.
  */
-export interface AIHabitSeriesInput {
-  readonly title: string;
-  readonly description: string;
-  readonly actions: readonly AIActionInput[];
-}
-
 export class HabitSeries {
-  readonly id: string;
-  readonly title: string;
-  readonly description: string;
-  readonly actions: readonly Action[];
-  readonly rank: Rank;
-  readonly totalScore: number;
-  readonly createdAt: Date;
-  readonly lastActivityAt: Date;
+  /** Unique identifier of the series */
+  public readonly id: string;
+
+  /** Human-readable title */
+  public readonly title: string;
+
+  /** Description of the series purpose */
+  public readonly description: string;
+
+  /** Actions belonging to this series (minimum 3) */
+  public readonly actions: readonly Action[];
+
+  /** Accumulated score of the series */
+  public readonly totalScore: number;
+
+  /** Creation timestamp */
+  public readonly createdAt: Date;
+
+  /** Last activity timestamp */
+  public readonly lastActivityAt: Date;
 
   /**
-   * Private constructor to enforce controlled creation.
-   * All instances must be created through explicit factory methods.
+   * Private constructor.
+   *
+   * Enforces all domain invariants.
+   * Instances can only be created through controlled factory methods.
    */
   private constructor(
     id: string,
     title: string,
     description: string,
     actions: readonly Action[],
-    rank: Rank,
     totalScore: number,
     createdAt: Date,
     lastActivityAt: Date
   ) {
+    // --- Identity validation ---
+    if (typeof id !== "string") {
+      throw new Error("HabitSeries id must be a string");
+    }
+
+    if (id.trim() === "") {
+      throw new Error("HabitSeries id cannot be empty");
+    }
+
+    // --- Title validation ---
+    if (typeof title !== "string") {
+      throw new Error("HabitSeries title must be a string");
+    }
+
+    if (title.trim() === "") {
+      throw new Error("HabitSeries title cannot be empty");
+    }
+
+    // --- Description validation ---
+    if (typeof description !== "string") {
+      throw new Error("HabitSeries description must be a string");
+    }
+
+    if (description.trim() === "") {
+      throw new Error("HabitSeries description cannot be empty");
+    }
+
+    // --- Actions validation ---
+    if (!Array.isArray(actions)) {
+      throw new Error("HabitSeries actions must be an array");
+    }
+
+    if (actions.length < 3) {
+      throw new Error("HabitSeries must contain at least three actions");
+    }
+
+    for (const action of actions) {
+      if (!(action instanceof Action)) {
+        throw new Error("All HabitSeries actions must be valid Action instances");
+      }
+    }
+
+    // --- Score validation ---
+    if (typeof totalScore !== "number") {
+      throw new Error("HabitSeries totalScore must be a number");
+    }
+
+    if (totalScore < 0) {
+      throw new Error("HabitSeries totalScore cannot be negative");
+    }
+
+    // --- Temporal validation ---
+    if (!(createdAt instanceof Date)) {
+      throw new Error("HabitSeries createdAt must be a Date");
+    }
+
+    if (!(lastActivityAt instanceof Date)) {
+      throw new Error("HabitSeries lastActivityAt must be a Date");
+    }
+
+    // --- State assignment (only after invariants are satisfied) ---
     this.id = id;
     this.title = title;
     this.description = description;
     this.actions = actions;
-    this.rank = rank;
     this.totalScore = totalScore;
     this.createdAt = createdAt;
     this.lastActivityAt = lastActivityAt;
   }
 
   /**
-   * Factory method for creating a HabitSeries from AI-generated content.
+   * Derived rank of the series.
    *
-   * This method:
-   * - Accepts only the minimal, already-sanitized AI output
-   * - Converts AI inputs into domain Value Objects
-   * - Applies safe defaults for rank and score
-   *
-   * NOTE:
-   * No business decisions (ranking, scoring evolution) are delegated to AI.
+   * Rank is NOT stored as state.
+   * It is always calculated from totalScore,
+   * ensuring consistency by construction.
    */
-  static fromAIOutput(id: string, input: AIHabitSeriesInput): HabitSeries {
-    const now = new Date();
-
-    const actions = input.actions.map((actionInput, index) =>
-      Action.fromAIOutput(actionInput, `${id}_action_${index}`)
-    );
-
-    return new HabitSeries(
-      id,
-      input.title,
-      input.description,
-      actions,
-      Rank.BRONZE,
-      0,
-      now,
-      now
-    );
+  public getRank(): Rank {
+    return calculateRankFromScore(this.totalScore);
   }
 
   /**
-   * Factory method for rehydrating a HabitSeries from persistence.
+   * Factory method for creating a new HabitSeries.
    *
-   * Used when loading existing series from storage.
-   * Defaults are applied defensively if optional fields are missing.
+   * Intended for use by application or domain services.
+   * The domain itself remains agnostic of where the data comes from.
    */
-  static create(params: {
+  public static create(params: {
     id: string;
     title: string;
     description: string;
     actions: readonly Action[];
-    rank?: Rank;
     totalScore?: number;
     createdAt?: Date;
     lastActivityAt?: Date;
@@ -133,43 +158,10 @@ export class HabitSeries {
       params.title,
       params.description,
       params.actions,
-      params.rank ?? Rank.BRONZE,
       params.totalScore ?? 0,
       params.createdAt ?? now,
       params.lastActivityAt ?? now
     );
-  }
-
-  /**
-   * Computes the rank based on the current total score.
-   *
-   * Business rule (centralized in Rank value object):
-   * - >= 1000 points → diamond
-   * - >= 600 points  → golden
-   * - >= 300 points  → silver
-   * - < 300 points   → bronze
-   */
-  calculateRank(): Rank {
-    return calculateRankFromScore(this.totalScore);
-  }
-
-  /**
-   * Maps the domain entity into a plain DTO
-   * suitable for API responses.
-   *
-   * No domain logic should leak beyond this point.
-   */
-  toDTO(): HabitSeriesDTO {
-    return {
-      id: this.id,
-      title: this.title,
-      description: this.description,
-      actions: this.actions.map(action => action.toDTO()),
-      rank: this.rank,
-      totalScore: this.totalScore,
-      createdAt: this.createdAt.toISOString(),
-      lastActivityAt: this.lastActivityAt.toISOString(),
-    };
   }
 }
 
