@@ -1,34 +1,34 @@
 /**
- * Create Habit Series Use Case (Application Layer)
- *
- * Orchestrates the full flow of habit series creation via AI.
- *
- * IMPORTANT NOTE ON VALIDATION STRATEGY:
+ * ⚠️ CONTEXT NOTE — CASE STUDY VS PRODUCTION IMPLEMENTATION
  * ------------------------------------------------------------
- * In this version, AI output is treated as UNTRUSTED INPUT.
+ * This use case represents a DELIBERATELY SIMPLIFIED version of the
+ * production flow, extracted as a case study to highlight the core
+ * orchestration logic between backend and AI.
  *
- * A schema-like structure is used to GUIDE the AI during generation
- * (prompt-level constraint), but runtime validation is performed
- * MANUALLY through explicit defensive checks, not via a JSON Schema
- * validator (e.g. Ajv).
+ * In the real production system, this same flow is executed with
+ * additional layers that are intentionally omitted here:
  *
- * This is a deliberate trade-off:
- * - avoids premature rigidity while prompts and structure evolve
- * - keeps validation logic explicit and readable at the use-case level
+ * - Authentication and identity resolution (JWT, middleware)
+ * - Full domain rule enforcement (plans, limits, energy, feature flags)
+ * - DTO mapping handled at infrastructure boundaries
+ * - Observability, logging and deployment concerns
  *
- * Flow:
- * 1. Pre-AI domain validation (abstracted in this case study)
- * 2. AI execution (3 passes: creative → structure → schema-guided)
- * 3. Post-AI defensive validation (manual contract checks)
- * 4. Persistence
- * 5. Domain side effects
- * 6. Return success result
+ * Those elements are NOT absent by omission, but by design.
  *
- * Dependencies (injected):
- * - userRepository: IUserRepository
- * - habitSeriesRepository: IHabitSeriesRepository
- * - energyRepository: IEnergyRepository
- * - aiProvider: IAIProvider
+ * The goal of this file is to emphasize:
+ * - how AI is treated as an untrusted external dependency
+ * - how multi-pass AI generation is governed by the application layer
+ * - how defensive validation protects the domain before persistence
+ * - how the flow remains deterministic despite probabilistic models
+ *
+ * This makes the orchestration easier to read, reason about and discuss
+ * without the noise of production-specific infrastructure concerns.
+ *
+ * In short:
+ * - This file optimizes for clarity and understanding.
+ * - The production system optimizes for correctness and survival.
+ *
+ * Both share the same conceptual flow.
  */
 
 import { getModelConfig } from '../../../domain/policies/ModelSelectionPolicy.js';
